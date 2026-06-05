@@ -1,0 +1,36 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum CourseStatus {
+  Active
+  Finished
+}
+
+model Course {
+  id        String         @id @default(cuid())
+  title     String
+  status    CourseStatus   @default(Active)
+  createdAt DateTime       @default(now())
+
+  sessions  StudySession[]
+}
+
+model StudySession {
+  id              String   @id @default(cuid())
+  courseId        String
+  startTime       DateTime
+  endTime         DateTime
+  durationSeconds Int
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId])
+  @@index([startTime])
+}

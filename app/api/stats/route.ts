@@ -109,7 +109,7 @@ function getHeatmapDays(
 function getLongestStreak(dateKeys: string[]): number {
   if (dateKeys.length === 0) return 0;
 
-  const sorted = [...new Set(dateKeys)].sort();
+  const sorted = Array.from(new Set(dateKeys)).sort();
 
   let longest = 1;
   let current = 1;

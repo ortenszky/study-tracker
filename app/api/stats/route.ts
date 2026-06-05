@@ -253,7 +253,7 @@ export async function GET(request: Request) {
     let currentWeekSeconds = 0;
     let previousWeekSeconds = 0;
 
-    for (const [dateKey, seconds] of secondsByDate.entries()) {
+    for (const [dateKey, seconds] of Array.from(secondsByDate.entries())) {
       if (currentSevenDayKeys.has(dateKey)) {
         currentWeekSeconds += seconds;
       }

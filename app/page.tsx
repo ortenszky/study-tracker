@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Activity,
   BarChart3,
@@ -130,7 +130,7 @@ function StatCard({
   value,
   helper,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   value: string;
   helper?: string;
@@ -257,9 +257,7 @@ export default function Home() {
     }
 
     const intervalId = window.setInterval(() => {
-      setElapsedSeconds(
-        Math.floor((Date.now() - startTime.getTime()) / 1000)
-      );
+      setElapsedSeconds(Math.floor((Date.now() - startTime.getTime()) / 1000));
     }, 1000);
 
     return () => {
@@ -452,9 +450,7 @@ export default function Home() {
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <p className="text-sm text-slate-400">Active session</p>
-                <h2 className="text-xl font-semibold text-white">
-                  Controller
-                </h2>
+                <h2 className="text-xl font-semibold text-white">Controller</h2>
               </div>
 
               <div className="rounded-2xl border border-blue-400/20 bg-blue-400/10 p-3 text-blue-300">
@@ -621,10 +617,24 @@ export default function Home() {
                         </Pie>
 
                         <Tooltip
-                          formatter={(value: number, _name, props) => [
-                            formatHoursMinutes(value),
-                            `${props.payload.title} (${props.payload.percentage}%)`,
-                          ]}
+                          formatter={(value, _name, props) => {
+                            const seconds =
+                              typeof value === "number"
+                                ? value
+                                : Number(value ?? 0);
+
+                            const payload = props.payload as {
+                              title?: string;
+                              percentage?: number;
+                            };
+
+                            return [
+                              formatHoursMinutes(seconds),
+                              `${payload.title ?? "Course"} (${
+                                payload.percentage ?? 0
+                              }%)`,
+                            ];
+                          }}
                           contentStyle={{
                             background: "#020617",
                             border: "1px solid #1e293b",
@@ -675,7 +685,8 @@ export default function Home() {
                 </div>
 
                 <div className="h-72">
-                  {stats && stats.peakProductivity.some((item) => item.hours > 0) ? (
+                  {stats &&
+                  stats.peakProductivity.some((item) => item.hours > 0) ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={stats.peakProductivity}>
                         <XAxis
@@ -684,16 +695,22 @@ export default function Home() {
                           tickLine={false}
                           axisLine={false}
                         />
+
                         <YAxis
                           stroke="#64748b"
                           tickLine={false}
                           axisLine={false}
                         />
+
                         <Tooltip
-                          formatter={(value: number) => [
-                            `${value}h`,
-                            "Study time",
-                          ]}
+                          formatter={(value) => {
+                            const hours =
+                              typeof value === "number"
+                                ? value
+                                : Number(value ?? 0);
+
+                            return [`${hours}h`, "Study time"];
+                          }}
                           contentStyle={{
                             background: "#020617",
                             border: "1px solid #1e293b",
@@ -701,6 +718,7 @@ export default function Home() {
                             color: "#ffffff",
                           }}
                         />
+
                         <Bar
                           dataKey="hours"
                           radius={[10, 10, 0, 0]}

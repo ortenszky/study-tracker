@@ -3,6 +3,10 @@ import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
+type CreateCourseBody = {
+  title?: string;
+};
+
 export async function GET() {
   try {
     const courses = await prisma.course.findMany({
@@ -27,8 +31,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const title = String(body.title ?? "").trim();
+    const body = (await request.json()) as CreateCourseBody;
+    const title = body.title?.trim() ?? "";
 
     if (!title) {
       return NextResponse.json(

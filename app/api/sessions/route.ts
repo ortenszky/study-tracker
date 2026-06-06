@@ -3,13 +3,19 @@ import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
+type CreateSessionBody = {
+  courseId?: string;
+  startTime?: string;
+  endTime?: string;
+};
+
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = (await request.json()) as CreateSessionBody;
 
-    const courseId = String(body.courseId ?? "");
-    const startTime = new Date(body.startTime);
-    const endTime = new Date(body.endTime);
+    const courseId = body.courseId?.trim() ?? "";
+    const startTime = body.startTime ? new Date(body.startTime) : null;
+    const endTime = body.endTime ? new Date(body.endTime) : null;
 
     if (!courseId) {
       return NextResponse.json(
@@ -18,14 +24,19 @@ export async function POST(request: Request) {
       );
     }
 
-    if (Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
+    if (
+      !startTime ||
+      !endTime ||
+      Number.isNaN(startTime.getTime()) ||
+      Number.isNaN(endTime.getTime())
+    ) {
       return NextResponse.json(
         { error: "Valid startTime and endTime are required." },
         { status: 400 }
       );
     }
 
-    if (endTime <= startTime) {
+    if (endTime.getTime() <= startTime.getTime()) {
       return NextResponse.json(
         { error: "endTime must be after startTime." },
         { status: 400 }
@@ -33,7 +44,9 @@ export async function POST(request: Request) {
     }
 
     const course = await prisma.course.findUnique({
-      where: { id: courseId },
+      where: {
+        id: courseId,
+      },
     });
 
     if (!course) {

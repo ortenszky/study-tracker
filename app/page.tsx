@@ -420,6 +420,31 @@ export default function Home() {
         ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
         : "border-blue-400/30 bg-blue-400/10 text-blue-300";
 
+  const heatmapDays = stats?.heatmap ?? [];
+
+  const heatmapWeeks = Array.from(
+    { length: Math.ceil(heatmapDays.length / 7) },
+    (_, weekIndex) => heatmapDays.slice(weekIndex * 7, weekIndex * 7 + 7)
+  );
+
+  const monthLabels = heatmapWeeks.map((week, weekIndex) => {
+    const firstDayOfMonth = week.find((day) => day.date.endsWith("-01"));
+
+    if (!firstDayOfMonth && weekIndex !== 0) {
+      return "";
+    }
+
+    const labelDay = firstDayOfMonth ?? week[0];
+
+    if (!labelDay) {
+      return "";
+    }
+
+    return new Date(`${labelDay.date}T00:00:00`).toLocaleString("en-US", {
+      month: "short",
+    });
+  });
+
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-6 text-slate-100 sm:px-6 lg:px-10">
       <div className="mx-auto max-w-7xl">
@@ -736,7 +761,7 @@ export default function Home() {
             </div>
 
             <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-2xl shadow-black/20">
-              <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-center">
+              <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-start">
                 <div>
                   <p className="text-sm text-slate-400">Consistency</p>
                   <h3 className="text-xl font-semibold text-white">
@@ -756,22 +781,45 @@ export default function Home() {
               </div>
 
               <div className="overflow-x-auto pb-2">
-                <div className="grid w-max grid-flow-col grid-rows-7 gap-1">
-                  {(stats?.heatmap ?? []).map((day) => {
-                    const dateNumber = Number(day.date.slice(8, 10));
+                <div className="min-w-max">
+                  <div className="mb-2 ml-10 grid grid-flow-col gap-1">
+                    {monthLabels.map((label, index) => (
+                      <div
+                        key={`${label}-${index}`}
+                        className="h-4 w-3 text-xs text-slate-400"
+                      >
+                        {label}
+                      </div>
+                    ))}
+                  </div>
 
-                    return (
-                        <div
-                            key={day.date}
-                            title={`${day.date}: ${day.hours}h`}
-                            className={`flex h-5 w-5 items-center justify-center rounded-sm text-[9px] font-medium text-slate-300 ${getHeatmapClass(
+                  <div className="flex gap-3">
+                    <div className="grid grid-rows-7 gap-1 text-xs text-slate-400">
+                      <div className="h-3" />
+                      <div className="flex h-3 items-center">Mon</div>
+                      <div className="h-3" />
+                      <div className="flex h-3 items-center">Wed</div>
+                      <div className="h-3" />
+                      <div className="flex h-3 items-center">Fri</div>
+                      <div className="h-3" />
+                    </div>
+
+                    <div className="grid grid-flow-col gap-1">
+                      {heatmapWeeks.map((week, weekIndex) => (
+                        <div key={weekIndex} className="grid grid-rows-7 gap-1">
+                          {week.map((day) => (
+                            <div
+                              key={day.date}
+                              title={`${day.date}: ${day.hours}h`}
+                              className={`h-3 w-3 rounded-sm ${getHeatmapClass(
                                 day.level
-                            )}`}
-                        >
-                          {dateNumber}
+                              )}`}
+                            />
+                          ))}
                         </div>
-                    );
-                  })}
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -780,9 +828,9 @@ export default function Home() {
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <div className="mb-2 flex items-center gap-2">
-                    <Flame className="text-orange-300" size={20}/>
+                    <Flame className="text-orange-300" size={20} />
                     <h3 className="text-xl font-semibold text-white">
-                    Burnout predictor
+                      Burnout predictor
                     </h3>
                   </div>
 

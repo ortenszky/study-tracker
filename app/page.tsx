@@ -757,15 +757,21 @@ export default function Home() {
 
               <div className="overflow-x-auto pb-2">
                 <div className="grid w-max grid-flow-col grid-rows-7 gap-1">
-                  {(stats?.heatmap ?? []).map((day) => (
-                    <div
-                      key={day.date}
-                      title={`${day.date}: ${day.hours}h`}
-                      className={`h-3 w-3 rounded-sm ${getHeatmapClass(
-                        day.level
-                      )}`}
-                    />
-                  ))}
+                  {(stats?.heatmap ?? []).map((day) => {
+                    const dateNumber = Number(day.date.slice(8, 10));
+
+                    return (
+                        <div
+                            key={day.date}
+                            title={`${day.date}: ${day.hours}h`}
+                            className={`flex h-5 w-5 items-center justify-center rounded-sm text-[9px] font-medium text-slate-300 ${getHeatmapClass(
+                                day.level
+                            )}`}
+                        >
+                          {dateNumber}
+                        </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -774,9 +780,9 @@ export default function Home() {
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <div className="mb-2 flex items-center gap-2">
-                    <Flame className="text-orange-300" size={20} />
+                    <Flame className="text-orange-300" size={20}/>
                     <h3 className="text-xl font-semibold text-white">
-                      Burnout predictor
+                    Burnout predictor
                     </h3>
                   </div>
 

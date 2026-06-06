@@ -760,8 +760,8 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-2xl shadow-black/20">
-              <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-start">
+            <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-4 shadow-2xl shadow-black/20 sm:p-5">
+              <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                 <div>
                   <p className="text-sm text-slate-400">Consistency</p>
                   <h3 className="text-xl font-semibold text-white">
@@ -780,8 +780,8 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto pb-2">
-                <div className="min-w-max">
+              <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
+                <div className="min-w-[760px]">
                   <div className="mb-2 ml-10 grid grid-flow-col gap-1">
                     {monthLabels.map((label, index) => (
                       <div

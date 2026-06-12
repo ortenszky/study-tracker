@@ -1,1 +1,1 @@
-{"version":1,"functions":{"/api/courses/[id]/finish":{},"/api/courses":{},"/api/sessions":{},"/api/stats":{}}}
+{"version":1,"functions":{"/api/keep-alive":{},"/api/courses/[id]/finish":{},"/api/courses":{},"/api/sessions":{},"/api/stats":{}}}

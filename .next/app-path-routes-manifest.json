@@ -1,1 +1,1 @@
-{"/_not-found/page":"/_not-found","/page":"/","/api/sessions/route":"/api/sessions","/api/courses/route":"/api/courses","/api/stats/route":"/api/stats","/api/courses/[id]/finish/route":"/api/courses/[id]/finish"}
+{"/_not-found/page":"/_not-found","/page":"/","/api/courses/[id]/finish/route":"/api/courses/[id]/finish","/api/sessions/route":"/api/sessions","/api/courses/route":"/api/courses","/api/stats/route":"/api/stats","/api/keep-alive/route":"/api/keep-alive"}

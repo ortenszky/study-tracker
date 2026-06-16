@@ -3,6 +3,25 @@ import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
+export async function GET() {
+  try {
+    const sessions = await prisma.studySession.findMany({
+      include: { course: true },
+      orderBy: { startTime: "desc" },
+      take: 100,
+    });
+
+    return NextResponse.json(sessions);
+  } catch (error) {
+    console.error("GET /api/sessions error:", error);
+
+    return NextResponse.json(
+      { error: "Failed to fetch sessions." },
+      { status: 500 }
+    );
+  }
+}
+
 type CreateSessionBody = {
   courseId?: string;
   startTime?: string;

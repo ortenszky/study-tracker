@@ -134,32 +134,40 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const timeZone = url.searchParams.get("tz") || "Europe/Zurich";
 
-    const sessions = await prisma.studySession.findMany({
-      include: {
-        course: true,
-      },
-      orderBy: {
-        startTime: "asc",
-      },
-    });
-
     const now = new Date();
     const todayKey = getDateKey(now, timeZone);
     const currentYear = getYearFromDateKey(todayKey);
 
-    const totalStudySeconds = sessions.reduce(
+    const startOfCurrentYear = new Date(Date.UTC(currentYear, 0, 1));
+    const fourteenDaysAgo = new Date(now.getTime() - 14 * 86_400_000);
+    const queryLowerBound = new Date(
+      Math.min(startOfCurrentYear.getTime(), fourteenDaysAgo.getTime())
+    );
+
+    const [allSessions, recentSessions] = await Promise.all([
+      prisma.studySession.findMany({
+        select: { durationSeconds: true },
+      }),
+      prisma.studySession.findMany({
+        where: { startTime: { gte: queryLowerBound } },
+        include: { course: true },
+        orderBy: { startTime: "asc" },
+      }),
+    ]);
+
+    const totalStudySeconds = allSessions.reduce(
       (sum, session) => sum + session.durationSeconds,
       0
     );
 
-    const sessionsToday = sessions.filter(
+    const sessionsToday = recentSessions.filter(
       (session) => getDateKey(session.startTime, timeZone) === todayKey
     ).length;
 
     const focusEnduranceSeconds =
-      sessions.length === 0
+      allSessions.length === 0
         ? 0
-        : Math.round(totalStudySeconds / sessions.length);
+        : Math.round(totalStudySeconds / allSessions.length);
 
     const secondsByCourse = new Map<
       string,
@@ -182,7 +190,7 @@ export async function GET(request: Request) {
       Evening: 0,
     };
 
-    for (const session of sessions) {
+    for (const session of recentSessions) {
       const existingCourse = secondsByCourse.get(session.courseId);
 
       if (existingCourse) {

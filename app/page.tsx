@@ -29,6 +29,15 @@ type Course = {
   createdAt: string;
 };
 
+type Session = {
+  id: string;
+  courseId: string;
+  startTime: string;
+  endTime: string;
+  durationSeconds: number;
+  course: Course;
+};
+
 type CourseDistributionItem = {
   courseId: string;
   title: string;
@@ -124,6 +133,11 @@ function getHeatmapClass(level: number): string {
   }
 }
 
+function toDatetimeLocal(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 function StatCard({
   icon,
   label,
@@ -156,6 +170,7 @@ function StatCard({
 export default function Home() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [sessions, setSessions] = useState<Session[]>([]);
 
   const [selectedCourseId, setSelectedCourseId] = useState("");
   const [newCourseTitle, setNewCourseTitle] = useState("");
@@ -165,11 +180,40 @@ export default function Home() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const [isSaving, setIsSaving] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const [confirmingFinish, setConfirmingFinish] = useState(false);
+
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editStart, setEditStart] = useState("");
+  const [editEnd, setEditEnd] = useState("");
+  const [editError, setEditError] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const selectedCourse = useMemo(() => {
     return courses.find((course) => course.id === selectedCourseId) ?? null;
   }, [courses, selectedCourseId]);
+
+  const groupedSessions = useMemo(() => {
+    const groups = new Map<string, Session[]>();
+
+    for (const session of sessions) {
+      const label = new Date(session.startTime).toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label)!.push(session);
+    }
+
+    return Array.from(groups.entries()).map(([dateLabel, items]) => ({
+      dateLabel,
+      items,
+    }));
+  }, [sessions]);
 
   async function fetchCourses() {
     const response = await fetch("/api/courses", {
@@ -207,14 +251,25 @@ export default function Home() {
     setStats(data);
   }
 
+  async function fetchSessions() {
+    const response = await fetch("/api/sessions", { cache: "no-store" });
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch sessions.");
+    }
+
+    const data = (await response.json()) as Session[];
+    setSessions(data);
+  }
+
   async function refreshData() {
-    await Promise.all([fetchCourses(), fetchStats()]);
+    await Promise.all([fetchCourses(), fetchStats(), fetchSessions()]);
   }
 
   useEffect(() => {
     refreshData().catch((error) => {
       console.error(error);
-      setStatusMessage("Could not load dashboard data.");
+      setErrorMessage("Could not load dashboard data.");
     });
   }, []);
 
@@ -245,7 +300,6 @@ export default function Home() {
       setElapsedSeconds(
         Math.floor((Date.now() - restoredStartTime.getTime()) / 1000)
       );
-      setStatusMessage("Restored your active study session.");
     } catch {
       localStorage.removeItem(TIMER_STORAGE_KEY);
     }
@@ -267,7 +321,7 @@ export default function Home() {
 
   function startSession() {
     if (!selectedCourseId) {
-      setStatusMessage("Create or select an active course first.");
+      setErrorMessage("Create or select an active course first.");
       return;
     }
 
@@ -276,7 +330,7 @@ export default function Home() {
     setStartTime(now);
     setElapsedSeconds(0);
     setIsRunning(true);
-    setStatusMessage("Study session started.");
+    setErrorMessage("");
 
     const savedState: SavedTimerState = {
       isRunning: true,
@@ -289,12 +343,13 @@ export default function Home() {
 
   async function stopAndSaveSession() {
     if (!startTime || !selectedCourseId) {
-      setStatusMessage("No active session to save.");
+      setErrorMessage("No active session to save.");
       return;
     }
 
     try {
       setIsSaving(true);
+      setErrorMessage("");
 
       const endTime = new Date();
 
@@ -321,11 +376,10 @@ export default function Home() {
       setElapsedSeconds(0);
       localStorage.removeItem(TIMER_STORAGE_KEY);
 
-      setStatusMessage("Session saved successfully.");
-      await fetchStats();
+      await Promise.all([fetchStats(), fetchSessions()]);
     } catch (error) {
       console.error(error);
-      setStatusMessage(
+      setErrorMessage(
         error instanceof Error ? error.message : "Failed to save session."
       );
     } finally {
@@ -345,11 +399,13 @@ export default function Home() {
     const title = newCourseTitle.trim();
 
     if (!title) {
-      setStatusMessage("Course title cannot be empty.");
+      setErrorMessage("Course title cannot be empty.");
       return;
     }
 
     try {
+      setErrorMessage("");
+
       const response = await fetch("/api/courses", {
         method: "POST",
         headers: {
@@ -365,7 +421,6 @@ export default function Home() {
       }
 
       setNewCourseTitle("");
-      setStatusMessage("Course created.");
 
       await fetchCourses();
 
@@ -374,7 +429,7 @@ export default function Home() {
       }
     } catch (error) {
       console.error(error);
-      setStatusMessage(
+      setErrorMessage(
         error instanceof Error ? error.message : "Failed to create course."
       );
     }
@@ -382,16 +437,18 @@ export default function Home() {
 
   async function finishCourse() {
     if (!selectedCourseId) {
-      setStatusMessage("Select a course first.");
+      setErrorMessage("Select a course first.");
       return;
     }
 
     if (isRunning) {
-      setStatusMessage("Stop and save your session before finishing the course.");
+      setErrorMessage("Stop and save your session before finishing the course.");
       return;
     }
 
     try {
+      setErrorMessage("");
+
       const response = await fetch(`/api/courses/${selectedCourseId}/finish`, {
         method: "PATCH",
       });
@@ -402,14 +459,53 @@ export default function Home() {
         throw new Error(data.error ?? "Failed to finish course.");
       }
 
-      setStatusMessage("Course archived as finished.");
+      setConfirmingFinish(false);
       setSelectedCourseId("");
       await refreshData();
     } catch (error) {
       console.error(error);
-      setStatusMessage(
+      setConfirmingFinish(false);
+      setErrorMessage(
         error instanceof Error ? error.message : "Failed to finish course."
       );
+    }
+  }
+
+  function startEdit(session: Session) {
+    setEditingSessionId(session.id);
+    setEditStart(toDatetimeLocal(new Date(session.startTime)));
+    setEditEnd(toDatetimeLocal(new Date(session.endTime)));
+    setEditError("");
+  }
+
+  async function saveSessionEdit(sessionId: string) {
+    try {
+      setIsSavingEdit(true);
+      setEditError("");
+
+      const response = await fetch(`/api/sessions/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startTime: new Date(editStart).toISOString(),
+          endTime: new Date(editEnd).toISOString(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Failed to update session.");
+      }
+
+      setEditingSessionId(null);
+      await Promise.all([fetchSessions(), fetchStats()]);
+    } catch (error) {
+      setEditError(
+        error instanceof Error ? error.message : "Failed to update session."
+      );
+    } finally {
+      setIsSavingEdit(false);
     }
   }
 
@@ -448,28 +544,21 @@ export default function Home() {
   return (
       <main className="min-h-screen w-full overflow-x-hidden bg-slate-950 px-4 py-6 text-slate-100 sm:px-6 lg:px-10">
         <div className="mx-auto w-full max-w-7xl">
-          <header className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end">
-            <div>
-              <div
-                  className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">
-                <Activity size={16}/>
-                Study Tracker Dashboard
-              </div>
-
-              <h1 className="mt-4 text-4xl font-bold tracking-tight text-white md:text-5xl">
-                Track focus. Build momentum.
-              </h1>
-
-              <p className="mt-3 max-w-2xl text-slate-400">
-                Real-time study sessions, course analytics, streaks, heatmap
-                intensity, and workload signals in one modern dashboard.
-              </p>
-            </div>
-
+          <header className="mb-8">
             <div
-                className="rounded-2xl border border-blue-400/20 bg-blue-400/10 px-4 py-3 text-sm text-blue-200 shadow-2xl shadow-blue-950/30">
-              {statusMessage || "Ready to study."}
+                className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">
+              <Activity size={16}/>
+              Study Tracker Dashboard
             </div>
+
+            <h1 className="mt-4 text-4xl font-bold tracking-tight text-white md:text-5xl">
+              Track focus. Build momentum.
+            </h1>
+
+            <p className="mt-3 max-w-2xl text-slate-400">
+              Real-time study sessions, course analytics, streaks, heatmap
+              intensity, and workload signals in one modern dashboard.
+            </p>
           </header>
 
           <section className="grid w-full min-w-0 gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
@@ -555,6 +644,10 @@ export default function Home() {
                   />
                 </div>
 
+                {errorMessage ? (
+                    <p className="text-xs text-red-400">{errorMessage}</p>
+                ) : null}
+
                 <button
                     onClick={handleStartStop}
                     disabled={isSaving || courses.length === 0}
@@ -571,13 +664,37 @@ export default function Home() {
                       : "Start Study Session"}
                 </button>
 
-                <button
-                    onClick={finishCourse}
-                    disabled={!selectedCourseId || isRunning}
-                    className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm font-semibold text-slate-300 transition hover:border-emerald-400/50 hover:text-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Finish Course
-                </button>
+                {confirmingFinish ? (
+                    <div className="space-y-2">
+                      <p className="text-center text-sm text-slate-400">
+                        Archive &ldquo;{selectedCourse?.title}&rdquo;?
+                      </p>
+
+                      <div className="flex gap-2">
+                        <button
+                            onClick={finishCourse}
+                            className="flex-1 rounded-2xl bg-red-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-400"
+                        >
+                          Yes, finish
+                        </button>
+
+                        <button
+                            onClick={() => setConfirmingFinish(false)}
+                            className="flex-1 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm font-semibold text-slate-300 transition hover:border-slate-600"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                ) : (
+                    <button
+                        onClick={() => setConfirmingFinish(true)}
+                        disabled={!selectedCourseId || isRunning}
+                        className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm font-semibold text-slate-300 transition hover:border-emerald-400/50 hover:text-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Finish Course
+                    </button>
+                )}
               </div>
             </aside>
 
@@ -881,6 +998,124 @@ export default function Home() {
                       </div>
                     </div>
                 ) : null}
+              </div>
+
+              <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-2xl shadow-black/20">
+                <div className="mb-4">
+                  <p className="text-sm text-slate-400">History</p>
+                  <h3 className="text-xl font-semibold text-white">Study sessions</h3>
+                </div>
+
+                {sessions.length === 0 ? (
+                    <p className="text-sm text-slate-500">No sessions recorded yet.</p>
+                ) : (
+                    <div>
+                      {groupedSessions.map(({ dateLabel, items }, groupIndex) => (
+                          <div key={dateLabel}>
+                            <p
+                                className={`mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 ${
+                                    groupIndex > 0 ? "mt-5" : ""
+                                }`}
+                            >
+                              {dateLabel}
+                            </p>
+
+                            <div className="space-y-1">
+                              {items.map((session) => (
+                                  <div
+                                      key={session.id}
+                                      className="rounded-xl bg-slate-950 px-3 py-2"
+                                  >
+                                    {editingSessionId === session.id ? (
+                                        <div className="space-y-3">
+                                          <div className="flex flex-wrap gap-3">
+                                            <div>
+                                              <label className="mb-1 block text-xs text-slate-500">
+                                                Start
+                                              </label>
+                                              <input
+                                                  type="datetime-local"
+                                                  value={editStart}
+                                                  onChange={(e) => setEditStart(e.target.value)}
+                                                  className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-white outline-none focus:border-emerald-400"
+                                              />
+                                            </div>
+
+                                            <div>
+                                              <label className="mb-1 block text-xs text-slate-500">
+                                                End
+                                              </label>
+                                              <input
+                                                  type="datetime-local"
+                                                  value={editEnd}
+                                                  onChange={(e) => setEditEnd(e.target.value)}
+                                                  className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-white outline-none focus:border-emerald-400"
+                                              />
+                                            </div>
+                                          </div>
+
+                                          {editError ? (
+                                              <p className="text-xs text-red-400">{editError}</p>
+                                          ) : null}
+
+                                          <div className="flex gap-2">
+                                            <button
+                                                onClick={() => saveSessionEdit(session.id)}
+                                                disabled={isSavingEdit}
+                                                className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-400 disabled:opacity-60"
+                                            >
+                                              {isSavingEdit ? "Saving…" : "Save"}
+                                            </button>
+
+                                            <button
+                                                onClick={() => setEditingSessionId(null)}
+                                                className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 transition hover:text-white"
+                                            >
+                                              Cancel
+                                            </button>
+                                          </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center justify-between gap-4">
+                                          <div className="flex min-w-0 items-center gap-3">
+                                            <span className="shrink-0 rounded-md bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
+                                              {session.course.title}
+                                            </span>
+
+                                            <span className="truncate text-sm text-slate-400">
+                                              {new Date(session.startTime).toLocaleTimeString("en-US", {
+                                                hour: "2-digit",
+                                                minute: "2-digit",
+                                              })}
+                                              {" → "}
+                                              {new Date(session.endTime).toLocaleTimeString("en-US", {
+                                                hour: "2-digit",
+                                                minute: "2-digit",
+                                              })}
+                                            </span>
+                                          </div>
+
+                                          <div className="flex shrink-0 items-center gap-3">
+                                            <span className="text-sm text-slate-500">
+                                              {formatHoursMinutes(session.durationSeconds)}
+                                            </span>
+
+                                            <button
+                                                onClick={() => startEdit(session)}
+                                                className="text-xs text-slate-500 transition hover:text-emerald-300"
+                                            >
+                                              Edit
+                                            </button>
+                                          </div>
+                                        </div>
+                                    )}
+                                  </div>
+                              ))}
+                            </div>
+                          </div>
+                      ))}
+                    </div>
+                )}
               </div>
             </section>
           </section>

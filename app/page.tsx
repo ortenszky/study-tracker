@@ -3,10 +3,15 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Activity,
+  Award,
   BarChart3,
   BookOpen,
+  CalendarDays,
+  Crown,
   Flame,
+  ListChecks,
   Plus,
+  Target,
   Timer,
   Trophy,
 } from "lucide-react";
@@ -58,11 +63,50 @@ type HeatmapDay = {
   level: number;
 };
 
+type DayOfWeekItem = {
+  day: "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun";
+  seconds: number;
+  hours: number;
+};
+
+type BusiestDay = {
+  date: string;
+  seconds: number;
+  hours: number;
+};
+
+type MonthConsistency = {
+  activeDays: number;
+  daysElapsed: number;
+  percentage: number;
+};
+
+type WeeklyGoal = {
+  targetSeconds: number;
+  currentSeconds: number;
+  percentage: number;
+};
+
+type Badge = {
+  id: string;
+  label: string;
+  achieved: boolean;
+};
+
 type Stats = {
   totalStudySeconds: number;
   sessionsToday: number;
   focusEnduranceSeconds: number;
   longestStreakDays: number;
+  currentStreakDays: number;
+  totalActiveDays: number;
+  totalSessions: number;
+  todayStudySeconds: number;
+  monthConsistency: MonthConsistency;
+  dayOfWeekBreakdown: DayOfWeekItem[];
+  busiestDay: BusiestDay | null;
+  weeklyGoal: WeeklyGoal;
+  badges: Badge[];
   courseDistribution: CourseDistributionItem[];
   peakProductivity: PeakProductivityItem[];
   heatmap: HeatmapDay[];
@@ -709,9 +753,11 @@ export default function Home() {
 
                 <StatCard
                     icon={<BarChart3 size={22}/>}
-                    label="Sessions today"
-                    value={String(stats?.sessionsToday ?? 0)}
-                    helper="Based on your local timezone"
+                    label="Today"
+                    value={formatHoursMinutes(stats?.todayStudySeconds ?? 0)}
+                    helper={`${stats?.sessionsToday ?? 0} session${
+                        stats?.sessionsToday === 1 ? "" : "s"
+                    } today`}
                 />
 
                 <StatCard
@@ -726,6 +772,36 @@ export default function Home() {
                     label="Longest streak"
                     value={`${stats?.longestStreakDays ?? 0} days`}
                     helper="Best consecutive-day run"
+                />
+
+                <StatCard
+                    icon={<Flame size={22}/>}
+                    label="Current streak"
+                    value={`${stats?.currentStreakDays ?? 0} days`}
+                    helper="Consecutive days including today"
+                />
+
+                <StatCard
+                    icon={<CalendarDays size={22}/>}
+                    label="Total active days"
+                    value={String(stats?.totalActiveDays ?? 0)}
+                    helper="Distinct days with a saved session"
+                />
+
+                <StatCard
+                    icon={<ListChecks size={22}/>}
+                    label="Total sessions"
+                    value={String(stats?.totalSessions ?? 0)}
+                    helper="All-time saved sessions"
+                />
+
+                <StatCard
+                    icon={<Target size={22}/>}
+                    label="This month"
+                    value={`${stats?.monthConsistency.activeDays ?? 0}/${
+                        stats?.monthConsistency.daysElapsed ?? 0
+                    } days`}
+                    helper={`${stats?.monthConsistency.percentage ?? 0}% consistency so far`}
                 />
               </div>
 
@@ -879,6 +955,131 @@ export default function Home() {
                 </div>
               </div>
 
+              <div className="grid gap-6 xl:grid-cols-2">
+                <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-2xl shadow-black/20">
+                  <div className="mb-4">
+                    <p className="text-sm text-slate-400">Habits</p>
+                    <h3 className="text-xl font-semibold text-white">
+                      Day-of-week breakdown
+                    </h3>
+                  </div>
+
+                  <div className="h-64">
+                    {stats &&
+                    stats.dayOfWeekBreakdown.some((item) => item.hours > 0) ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={stats.dayOfWeekBreakdown}>
+                            <XAxis
+                                dataKey="day"
+                                stroke="#64748b"
+                                tickLine={false}
+                                axisLine={false}
+                            />
+
+                            <YAxis
+                                stroke="#64748b"
+                                tickLine={false}
+                                axisLine={false}
+                            />
+
+                            <Tooltip
+                                formatter={(value) => {
+                                  const hours =
+                                      typeof value === "number"
+                                          ? value
+                                          : Number(value ?? 0);
+
+                                  return [`${hours}h`, "Study time"];
+                                }}
+                                contentStyle={{
+                                  background: "#020617",
+                                  border: "1px solid #1e293b",
+                                  borderRadius: "12px",
+                                  color: "#ffffff",
+                                }}
+                            />
+
+                            <Bar
+                                dataKey="hours"
+                                radius={[10, 10, 0, 0]}
+                                fill="#a855f7"
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                          Save sessions to see your weekday habits.
+                        </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-2xl shadow-black/20">
+                  <div className="mb-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-slate-400">Personal best</p>
+                      <h3 className="text-xl font-semibold text-white">
+                        Busiest day ever
+                      </h3>
+                    </div>
+
+                    <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 p-3 text-amber-300">
+                      <Crown size={22}/>
+                    </div>
+                  </div>
+
+                  {stats?.busiestDay ? (
+                      <div className="flex h-48 flex-col items-center justify-center rounded-2xl bg-slate-950 text-center">
+                        <p className="font-mono text-4xl font-bold text-white">
+                          {formatHoursMinutes(stats.busiestDay.seconds)}
+                        </p>
+                        <p className="mt-2 text-sm text-slate-400">
+                          {new Date(`${stats.busiestDay.date}T00:00:00`).toLocaleDateString(
+                              "en-US",
+                              { weekday: "long", month: "long", day: "numeric", year: "numeric" }
+                          )}
+                        </p>
+                      </div>
+                  ) : (
+                      <div className="flex h-48 items-center justify-center text-sm text-slate-500">
+                        Save sessions to find your busiest day.
+                      </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-2xl shadow-black/20">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="mb-2 flex items-center gap-2">
+                      <Target className="text-blue-300" size={20}/>
+                      <h3 className="text-xl font-semibold text-white">
+                        Weekly goal
+                      </h3>
+                    </div>
+
+                    <p className="max-w-3xl text-sm text-slate-400">
+                      {stats
+                          ? `${formatHoursMinutes(stats.weeklyGoal.currentSeconds)} of ${formatHoursMinutes(
+                              stats.weeklyGoal.targetSeconds
+                          )} this week (Mon–today).`
+                          : "Set a weekly study target and track your progress."}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-blue-400/30 bg-blue-400/10 px-4 py-3 text-sm font-semibold text-blue-300">
+                    {stats?.weeklyGoal.percentage ?? 0}% of goal
+                  </div>
+                </div>
+
+                <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-slate-950">
+                  <div
+                      className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all"
+                      style={{ width: `${stats?.weeklyGoal.percentage ?? 0}%` }}
+                  />
+                </div>
+              </div>
+
               <div
                   className="w-full min-w-0 overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/70 p-4 shadow-2xl shadow-black/20 sm:p-5">
                 <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -998,6 +1199,36 @@ export default function Home() {
                       </div>
                     </div>
                 ) : null}
+              </div>
+
+              <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-2xl shadow-black/20">
+                <div className="mb-4 flex items-center gap-2">
+                  <Award className="text-yellow-300" size={20}/>
+                  <h3 className="text-xl font-semibold text-white">Milestones</h3>
+                </div>
+
+                <p className="mb-4 text-sm text-slate-400">
+                  {stats
+                      ? `${stats.badges.filter((badge) => badge.achieved).length} of ${
+                          stats.badges.length
+                      } unlocked`
+                      : "Save sessions to start unlocking milestones."}
+                </p>
+
+                <div className="flex flex-wrap gap-2">
+                  {(stats?.badges ?? []).map((badge) => (
+                      <span
+                          key={badge.id}
+                          className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                              badge.achieved
+                                  ? "border-yellow-400/30 bg-yellow-400/10 text-yellow-300"
+                                  : "border-slate-800 bg-slate-950 text-slate-600"
+                          }`}
+                      >
+                        {badge.label}
+                      </span>
+                  ))}
+                </div>
               </div>
 
               <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-2xl shadow-black/20">

@@ -3,6 +3,10 @@ import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
+const WEEKLY_GOAL_HOURS = 14;
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const WEEKDAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+
 type CourseDistributionItem = {
   courseId: string;
   title: string;
@@ -21,6 +25,36 @@ type HeatmapDay = {
   seconds: number;
   hours: number;
   level: number;
+};
+
+type DayOfWeekItem = {
+  day: (typeof WEEKDAY_ORDER)[number];
+  seconds: number;
+  hours: number;
+};
+
+type BusiestDay = {
+  date: string;
+  seconds: number;
+  hours: number;
+};
+
+type MonthConsistency = {
+  activeDays: number;
+  daysElapsed: number;
+  percentage: number;
+};
+
+type WeeklyGoal = {
+  targetSeconds: number;
+  currentSeconds: number;
+  percentage: number;
+};
+
+type Badge = {
+  id: string;
+  label: string;
+  achieved: boolean;
 };
 
 function getDateKey(date: Date, timeZone: string): string {
@@ -52,6 +86,16 @@ function addDays(date: Date, days: number): Date {
 
 function dateKeyToUtcDate(dateKey: string): Date {
   return new Date(`${dateKey}T00:00:00.000Z`);
+}
+
+function shiftDateKey(dateKey: string, days: number): string {
+  const date = dateKeyToUtcDate(dateKey);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function getWeekdayLabel(dateKey: string): (typeof WEEKDAY_LABELS)[number] {
+  return WEEKDAY_LABELS[dateKeyToUtcDate(dateKey).getUTCDay()];
 }
 
 function diffDays(a: string, b: string): number {
@@ -129,6 +173,114 @@ function getLongestStreak(dateKeys: string[]): number {
   return longest;
 }
 
+function getCurrentStreakDays(
+  secondsByDate: Map<string, number>,
+  todayKey: string
+): number {
+  const hasActivity = (key: string) => (secondsByDate.get(key) ?? 0) > 0;
+
+  let cursor = todayKey;
+
+  if (!hasActivity(cursor)) {
+    cursor = shiftDateKey(cursor, -1);
+    if (!hasActivity(cursor)) return 0;
+  }
+
+  let streak = 0;
+
+  while (hasActivity(cursor)) {
+    streak += 1;
+    cursor = shiftDateKey(cursor, -1);
+  }
+
+  return streak;
+}
+
+function getMondayKey(todayKey: string): string {
+  const weekday = dateKeyToUtcDate(todayKey).getUTCDay();
+  const offsetFromMonday = (weekday + 6) % 7;
+  return shiftDateKey(todayKey, -offsetFromMonday);
+}
+
+function getWeekToDateSeconds(
+  secondsByDate: Map<string, number>,
+  todayKey: string
+): number {
+  const mondayKey = getMondayKey(todayKey);
+
+  let total = 0;
+  let cursor = mondayKey;
+
+  while (cursor <= todayKey) {
+    total += secondsByDate.get(cursor) ?? 0;
+    cursor = shiftDateKey(cursor, 1);
+  }
+
+  return total;
+}
+
+function getMonthConsistency(
+  secondsByDate: Map<string, number>,
+  todayKey: string
+): MonthConsistency {
+  const [yearPart, monthPart, dayPart] = todayKey.split("-");
+  const daysElapsed = Number(dayPart);
+
+  let activeDays = 0;
+
+  for (let day = 1; day <= daysElapsed; day++) {
+    const key = `${yearPart}-${monthPart}-${String(day).padStart(2, "0")}`;
+    if ((secondsByDate.get(key) ?? 0) > 0) activeDays += 1;
+  }
+
+  return {
+    activeDays,
+    daysElapsed,
+    percentage:
+      daysElapsed === 0 ? 0 : Math.round((activeDays / daysElapsed) * 100),
+  };
+}
+
+function getBadges({
+  totalHours,
+  longestStreakDays,
+  totalSessions,
+  totalActiveDays,
+}: {
+  totalHours: number;
+  longestStreakDays: number;
+  totalSessions: number;
+  totalActiveDays: number;
+}): Badge[] {
+  const hourMilestones = [10, 50, 100, 250, 500];
+  const streakMilestones = [3, 7, 30, 100];
+  const sessionMilestones = [10, 50, 200, 500];
+  const activeDayMilestones = [7, 30, 100, 365];
+
+  return [
+    ...hourMilestones.map((hours) => ({
+      id: `hours-${hours}`,
+      label: `${hours} Hours`,
+      achieved: totalHours >= hours,
+    })),
+    ...streakMilestones.map((days) => ({
+      id: `streak-${days}`,
+      label: `${days}-Day Streak`,
+      achieved: longestStreakDays >= days,
+    })),
+    ...sessionMilestones.map((count) => ({
+      id: `sessions-${count}`,
+      label: `${count} Sessions`,
+      achieved: totalSessions >= count,
+    })),
+    ...activeDayMilestones.map((days) => ({
+      id: `active-days-${days}`,
+      label: `${days} Active Days`,
+      achieved: totalActiveDays >= days,
+    })),
+  ];
+}
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -146,7 +298,7 @@ export async function GET(request: Request) {
 
     const [allSessions, recentSessions] = await Promise.all([
       prisma.studySession.findMany({
-        select: { durationSeconds: true },
+        select: { durationSeconds: true, startTime: true },
       }),
       prisma.studySession.findMany({
         where: { startTime: { gte: queryLowerBound } },
@@ -155,19 +307,54 @@ export async function GET(request: Request) {
       }),
     ]);
 
-    const totalStudySeconds = allSessions.reduce(
-      (sum, session) => sum + session.durationSeconds,
-      0
-    );
+    const totalSessions = allSessions.length;
+
+    let totalStudySeconds = 0;
+    const lifetimeSecondsByDate = new Map<string, number>();
+    const dayOfWeekSeconds: Record<(typeof WEEKDAY_LABELS)[number], number> = {
+      Sun: 0,
+      Mon: 0,
+      Tue: 0,
+      Wed: 0,
+      Thu: 0,
+      Fri: 0,
+      Sat: 0,
+    };
+
+    for (const session of allSessions) {
+      totalStudySeconds += session.durationSeconds;
+
+      const dateKey = getDateKey(session.startTime, timeZone);
+      lifetimeSecondsByDate.set(
+        dateKey,
+        (lifetimeSecondsByDate.get(dateKey) ?? 0) + session.durationSeconds
+      );
+
+      dayOfWeekSeconds[getWeekdayLabel(dateKey)] += session.durationSeconds;
+    }
+
+    const totalActiveDays = lifetimeSecondsByDate.size;
+
+    let busiestDay: BusiestDay | null = null;
+
+    for (const [date, seconds] of Array.from(lifetimeSecondsByDate.entries())) {
+      if (!busiestDay || seconds > busiestDay.seconds) {
+        busiestDay = { date, seconds, hours: Number((seconds / 3600).toFixed(2)) };
+      }
+    }
+
+    const dayOfWeekBreakdown: DayOfWeekItem[] = WEEKDAY_ORDER.map((day) => ({
+      day,
+      seconds: dayOfWeekSeconds[day],
+      hours: Number((dayOfWeekSeconds[day] / 3600).toFixed(2)),
+    }));
 
     const sessionsToday = recentSessions.filter(
       (session) => getDateKey(session.startTime, timeZone) === todayKey
     ).length;
 
     const focusEnduranceSeconds =
-      allSessions.length === 0
-        ? 0
-        : Math.round(totalStudySeconds / allSessions.length);
+      totalSessions === 0 ? 0 : Math.round(totalStudySeconds / totalSessions);
 
     const secondsByCourse = new Map<
       string,
@@ -244,8 +431,30 @@ export async function GET(request: Request) {
 
     const dateKeysWithSessions = Array.from(secondsByDate.keys());
     const longestStreakDays = getLongestStreak(dateKeysWithSessions);
+    const currentStreakDays = getCurrentStreakDays(secondsByDate, todayKey);
 
     const heatmap = getHeatmapDays(currentYear, secondsByDate);
+
+    const todayStudySeconds = secondsByDate.get(todayKey) ?? 0;
+    const monthConsistency = getMonthConsistency(secondsByDate, todayKey);
+
+    const weeklyGoalTargetSeconds = WEEKLY_GOAL_HOURS * 3600;
+    const weeklyGoalCurrentSeconds = getWeekToDateSeconds(secondsByDate, todayKey);
+    const weeklyGoal: WeeklyGoal = {
+      targetSeconds: weeklyGoalTargetSeconds,
+      currentSeconds: weeklyGoalCurrentSeconds,
+      percentage: Math.min(
+        100,
+        Math.round((weeklyGoalCurrentSeconds / weeklyGoalTargetSeconds) * 100)
+      ),
+    };
+
+    const badges = getBadges({
+      totalHours: totalStudySeconds / 3600,
+      longestStreakDays,
+      totalSessions,
+      totalActiveDays,
+    });
 
     const currentSevenDayKeys = new Set<string>();
     const previousSevenDayKeys = new Set<string>();
@@ -301,6 +510,15 @@ export async function GET(request: Request) {
       sessionsToday,
       focusEnduranceSeconds,
       longestStreakDays,
+      currentStreakDays,
+      totalActiveDays,
+      totalSessions,
+      todayStudySeconds,
+      monthConsistency,
+      dayOfWeekBreakdown,
+      busiestDay,
+      weeklyGoal,
+      badges,
       courseDistribution,
       peakProductivity,
       heatmap,

@@ -9,17 +9,32 @@ datasource db {
 }
 
 enum CourseStatus {
+  Planned
   Active
   Finished
 }
 
 model Course {
-  id        String         @id @default(cuid())
-  title     String
-  status    CourseStatus   @default(Active)
-  createdAt DateTime       @default(now())
+  id                  String         @id @default(cuid())
+  curriculumKey       String?        @unique
+  title               String
+  status              CourseStatus   @default(Active)
+  ects                 Int            @default(5)
+  assessmentType      String?
+  semester             Int?
+  plannedStart         DateTime?
+  targetDate           DateTime?
+  weeklyTargetMinutes Int            @default(300)
+  color                String         @default("#5B5BD6")
+  position             Int            @default(0)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 
-  sessions  StudySession[]
+  sessions             StudySession[]
+  activeTimer          ActiveTimer?
+
+  @@index([status])
+  @@index([targetDate])
 }
 
 model StudySession {
@@ -28,9 +43,21 @@ model StudySession {
   startTime       DateTime
   endTime         DateTime
   durationSeconds Int
+  note            String?
+  createdAt       DateTime @default(now())
 
   course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@index([courseId])
   @@index([startTime])
+}
+
+model ActiveTimer {
+  id        String   @id @default("primary")
+  courseId  String   @unique
+  startTime DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
 }

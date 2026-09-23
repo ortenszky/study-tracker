@@ -1,4 +1,10 @@
-import "./styles/globals.css"; // Ensure this matches the file name you created
+import type { Metadata } from "next";
+import "./styles/globals.css";
+
+export const metadata: Metadata = {
+  title: "Study Trajectory · July 2027",
+  description: "Private curriculum, focus, and study-goal dashboard.",
+};
 
 export default function RootLayout({
   children,

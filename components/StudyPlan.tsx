@@ -147,7 +147,7 @@ export function StudyPlan({ courses, onChanged }: Props) {
 
       <div className="thesis-track">
         <div><p className="kicker">Thesis parallel track</p><h3>Start early, finish calmly</h3></div>
-        {["Topic · Feb 14", "Proposal · Mar 15", "Data & literature · Apr 15", "Analysis · May 31", "Full draft · Jun 20", "Submit · Jul 15"].map((milestone, index) => (
+        {["Topic · Jan 31", "Proposal · Feb 28", "Data & literature · Mar 31", "Analysis · May 15", "Full draft · Jun 20", "Submit · Jul 15"].map((milestone, index) => (
           <div className="thesis-step" key={milestone}><span>{index + 1}</span>{milestone}</div>
         ))}
       </div>
